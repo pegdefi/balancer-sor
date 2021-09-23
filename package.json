@@ -1,11 +1,6 @@
 {
-<<<<<<< HEAD
     "name": "@balancer-labs/sor",
     "version": "1.1.0",
-=======
-    "name": "@balancer-labs/sor2",
-    "version": "2.1.1",
->>>>>>> 6140293c6a6aa803d2aa8dac60e25d8edf47a0e4
     "license": "GPL-3.0-only",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
