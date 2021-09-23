@@ -1,6 +1,5 @@
 import { BigNumber } from '../utils/bignumber';
 import * as stableMath from '../pools/stablePool/stableMath';
-import { StablePoolPairData } from 'pools/stablePool/stablePool';
 
 /////////
 /// UI Helpers
@@ -19,13 +18,13 @@ export function BPTForTokensZeroPriceImpact(
 ): BigNumber {
     if (allBalances.length != amounts.length)
         throw 'allBalances and amounts have to have same length';
-    const zero = new BigNumber(0);
+    let zero = new BigNumber(0);
     let amountBPTOut = new BigNumber(0);
     // Calculate the amount of BPT adding this liquidity would result in
     // if there were no price impact, i.e. using the spot price of tokenIn/BPT
 
     // We need to scale down allBalances
-    const allBalancesDownScaled: BigNumber[] = [];
+    let allBalancesDownScaled = [];
     for (let i = 0; i < allBalances.length; i++) {
         allBalancesDownScaled.push(
             allBalances[i].times(new BigNumber(10).pow(-decimals[i]))
@@ -35,14 +34,14 @@ export function BPTForTokensZeroPriceImpact(
     for (let i = 0; i < allBalances.length; i++) {
         // We need to scale down amounts
         amounts[i] = amounts[i].times(new BigNumber(10).pow(-decimals[i]));
-        const poolPairData: StablePoolPairData = {
+        let poolPairData = {
             amp: amp,
             allBalances: allBalancesDownScaled,
             tokenIndexIn: i,
             balanceOut: bptTotalSupply.times(new BigNumber(10).pow(-18)),
             swapFee: zero,
-        } as StablePoolPairData;
-        const BPTPrice = stableMath._spotPriceAfterSwapTokenInForExactBPTOut(
+        };
+        let BPTPrice = stableMath._spotPriceAfterSwapTokenInForExactBPTOut(
             zero,
             poolPairData
         );

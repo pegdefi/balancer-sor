@@ -1,6 +1,5 @@
 // npx mocha -r ts-node/register test/filtersAndPaths.spec.ts
 import { assert } from 'chai';
-import cloneDeep from 'lodash.clonedeep';
 import {
     PoolDictionary,
     SwapPairType,
@@ -8,12 +7,8 @@ import {
     NewPath,
     SwapTypes,
 } from '../src/types';
-import {
-    filterPoolsOfInterest,
-    filterHopPools,
-} from '../src/routeProposal/filtering';
-import { calculatePathLimits } from '../src/routeProposal/pathLimits';
-import { getBestPaths } from '../src/router';
+import { filterPoolsOfInterest, filterHopPools } from '../src/pools';
+import { calculatePathLimits, smartOrderRouter } from '../src/sorClass';
 import BigNumber from 'bignumber.js';
 import { countPoolSwapPairTypes } from './lib/testHelpers';
 
@@ -53,7 +48,7 @@ describe('Tests pools filtering and path processing', () => {
         let noDirect = 0,
             noHopIn = 0,
             noHopOut = 0;
-        for (const k in poolsOfInterestDictionary) {
+        for (let k in poolsOfInterestDictionary) {
             if (
                 poolsOfInterestDictionary[k].swapPairType ===
                 SwapPairType.Direct
@@ -90,7 +85,11 @@ describe('Tests pools filtering and path processing', () => {
             subgraphPoolsLarge.pools,
             WETH,
             DAI,
-            4
+            4,
+            {
+                isOverRide: true,
+                disabledTokens: [],
+            }
         );
 
         [poolsOfInterestDictionary, pathData] = filterHopPools(
@@ -187,7 +186,7 @@ describe('Tests pools filtering and path processing', () => {
         let noDirect = 0,
             noHopIn = 0,
             noHopOut = 0;
-        for (const k in poolsOfInterestDictionary) {
+        for (let k in poolsOfInterestDictionary) {
             if (
                 poolsOfInterestDictionary[k].swapPairType ===
                 SwapPairType.Direct
@@ -232,7 +231,7 @@ describe('Tests pools filtering and path processing', () => {
         let noDirect = 0,
             noHopIn = 0,
             noHopOut = 0;
-        for (const k in poolsOfInterestDictionary) {
+        for (let k in poolsOfInterestDictionary) {
             if (
                 poolsOfInterestDictionary[k].swapPairType ===
                 SwapPairType.Direct
@@ -263,8 +262,8 @@ describe('Tests pools filtering and path processing', () => {
     it('should filter stable & weighted pools correctly', () => {
         let hopTokens: string[];
         let poolsOfInterestDictionary: PoolDictionary;
-        const weighted: any = testPools.weightedOnly;
-        const allPools: any = testPools.stableOnly.concat(weighted);
+        let weighted: any = testPools.weightedOnly;
+        let allPools: any = testPools.stableOnly.concat(weighted);
 
         [poolsOfInterestDictionary, hopTokens] = filterPoolsOfInterest(
             allPools,
@@ -278,7 +277,7 @@ describe('Tests pools filtering and path processing', () => {
             noHopOut = 0,
             noWeighted = 0,
             noStable = 0;
-        for (const k in poolsOfInterestDictionary) {
+        for (let k in poolsOfInterestDictionary) {
             if (
                 poolsOfInterestDictionary[k].swapPairType ===
                 SwapPairType.Direct
@@ -330,7 +329,7 @@ describe('Tests pools filtering and path processing', () => {
         let noDirect = 0,
             noHopIn = 0,
             noHopOut = 0;
-        for (const k in poolsOfInterestDictionary) {
+        for (let k in poolsOfInterestDictionary) {
             if (
                 poolsOfInterestDictionary[k].swapPairType ===
                 SwapPairType.Direct
@@ -442,7 +441,7 @@ describe('Tests pools filtering and path processing', () => {
             noHopIn = 0,
             noHopOut = 0;
 
-        for (const k in poolsOfInterestDictionary) {
+        for (let k in poolsOfInterestDictionary) {
             if (
                 poolsOfInterestDictionary[k].swapPairType ===
                 SwapPairType.Direct
@@ -604,9 +603,10 @@ describe('Tests pools filtering and path processing', () => {
     });
 
     it('Test pool class that has direct & multihop paths', async () => {
-        const pools = cloneDeep(testPools).pathTestDirectAndMulti;
-        const tokenIn = USDC;
-        const tokenOut = DAI;
+        const pools = JSON.parse(JSON.stringify(testPools))
+            .pathTestDirectAndMulti;
+        let tokenIn = USDC;
+        let tokenOut = DAI;
         let hopTokens: string[];
         let poolsOfInterestDictionary: PoolDictionary;
         let pathData: NewPath[];
@@ -639,9 +639,10 @@ describe('Tests pools filtering and path processing', () => {
     });
 
     it('Test pool class that has two multihop paths, swapExactIn', async () => {
-        const pools = cloneDeep(testPools).pathTestPoolTwoMultiHops;
-        const tokenIn = USDC;
-        const tokenOut = DAI;
+        const pools = JSON.parse(JSON.stringify(testPools))
+            .pathTestPoolTwoMultiHops;
+        let tokenIn = USDC;
+        let tokenOut = DAI;
         let hopTokens: string[];
         let poolsOfInterestDictionary: PoolDictionary;
         let pathData: NewPath[];
@@ -694,8 +695,8 @@ describe('Tests pools filtering and path processing', () => {
         assert.equal(paths[1].limitAmount.toString(), '300');
 
         let swaps: any, total: BigNumber, marketSp: BigNumber;
-        [swaps, total, marketSp] = getBestPaths(
-            cloneDeep(poolsOfInterestDictionary), // Need to keep original pools for cache
+        [swaps, total, marketSp] = smartOrderRouter(
+            JSON.parse(JSON.stringify(poolsOfInterestDictionary)), // Need to keep original pools for cache
             paths,
             SwapTypes.SwapExactIn,
             new BigNumber(1),
@@ -748,9 +749,10 @@ describe('Tests pools filtering and path processing', () => {
     });
 
     it('Test pool class that has two multihop paths, swapExactOut', async () => {
-        const pools = cloneDeep(testPools).pathTestPoolTwoMultiHops;
-        const tokenIn = USDC;
-        const tokenOut = DAI;
+        const pools = JSON.parse(JSON.stringify(testPools))
+            .pathTestPoolTwoMultiHops;
+        let tokenIn = USDC;
+        let tokenOut = DAI;
         let hopTokens: string[];
         let poolsOfInterestDictionary: PoolDictionary;
         let pathData: NewPath[];
@@ -803,8 +805,8 @@ describe('Tests pools filtering and path processing', () => {
         assert.equal(paths[1].limitAmount.toString(), '228.98997686969935');
 
         let swaps: any, total: BigNumber, marketSp: BigNumber;
-        [swaps, total, marketSp] = getBestPaths(
-            cloneDeep(poolsOfInterestDictionary), // Need to keep original pools for cache
+        [swaps, total, marketSp] = smartOrderRouter(
+            JSON.parse(JSON.stringify(poolsOfInterestDictionary)), // Need to keep original pools for cache
             paths,
             SwapTypes.SwapExactOut,
             new BigNumber(1),

@@ -1,3 +1,4 @@
+require('dotenv').config();
 import { JsonRpcProvider } from '@ethersproject/providers';
 import { loadTestFile } from './lib/testHelpers';
 import { compareTest } from './lib/compareHelper';
@@ -7,7 +8,7 @@ const provider = new JsonRpcProvider(
 );
 
 // This must be updated with pools of interest (see ./test/testData/testPools)
-const testFiles = [
+let testFiles = [
     'gusdBug',
     'gusdBugSinglePath',
     '25178485-blockKovan', // UI-506, WETH to WBTC Bug
@@ -200,6 +201,6 @@ async function loopTests(file) {
     }).timeout(10000);
 }
 
-testFiles.forEach((file) => {
+testFiles.forEach(file => {
     loopTests(file);
 });

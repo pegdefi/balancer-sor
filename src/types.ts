@@ -1,9 +1,5 @@
 import { BigNumber } from './utils/bignumber';
 
-export type NoNullableField<T> = {
-    [P in keyof T]: NonNullable<T[P]>;
-};
-
 export enum SwapTypes {
     SwapExactIn,
     SwapExactOut,
@@ -13,7 +9,6 @@ export enum PoolTypes {
     Weighted,
     Stable,
     Element,
-    MetaStable,
 }
 
 export enum SwapPairType {
@@ -22,27 +17,22 @@ export enum SwapPairType {
     HopOut,
 }
 
-export interface SwapOptions {
-    gasPrice: BigNumber;
-    swapGas: BigNumber;
-    timestamp: number;
-    maxPools: number;
-    poolTypeFilter: PoolFilter;
-    forceRefresh: boolean;
+export enum PairTypes {
+    BptToToken,
+    TokenToBpt,
+    TokenToToken,
 }
 
-export type PoolPairBase = {
-    id: string;
-    address: string;
+export interface PoolPairBase {
+    balanceIn: BigNumber;
+    balanceOut: BigNumber;
     poolType: PoolTypes;
-    swapFee: BigNumber;
+    pairType: PairTypes;
     tokenIn: string;
     tokenOut: string;
     decimalsIn: number;
     decimalsOut: number;
-    balanceIn: BigNumber;
-    balanceOut: BigNumber;
-};
+}
 
 export interface Swap {
     pool: string;
@@ -55,13 +45,17 @@ export interface Swap {
     tokenOutDecimals: number;
 }
 
+export interface SubGraphPoolsBase {
+    pools: SubgraphPoolBase[];
+}
+
 export interface SubgraphPoolBase {
     id: string;
     address: string;
     poolType: string;
     swapFee: string;
     totalShares: string;
-    tokens: SubgraphToken[];
+    tokens: SubGraphToken[];
     tokensList: string[];
 
     // Weighted & Element field
@@ -75,19 +69,24 @@ export interface SubgraphPoolBase {
     unitSeconds?: number;
     principalToken?: string;
     baseToken?: string;
-
-    // LBP specific fields
-    swapEnabled?: boolean;
 }
 
-export type SubgraphToken = {
+export interface SubGraphToken {
     address: string;
     balance: string;
-    decimals: number;
-    priceRate: string;
-    // WeightedPool field
-    weight: string | null;
-};
+    decimals: string | number;
+    // Stable & Element field
+    weight?: string;
+}
+
+export interface DisabledOptions {
+    isOverRide: boolean;
+    disabledTokens: DisabledToken[];
+}
+export interface DisabledToken {
+    address: string;
+    symbol: string;
+}
 
 export interface SwapV2 {
     poolId: string;
@@ -101,9 +100,7 @@ export interface SwapInfo {
     tokenAddresses: string[];
     swaps: SwapV2[];
     swapAmount: BigNumber;
-    swapAmountForSwaps?: BigNumber; // Used with stETH/wstETH
     returnAmount: BigNumber;
-    returnAmountFromSwaps?: BigNumber; // Used with stETH/wstETH
     returnAmountConsideringFees: BigNumber;
     tokenIn: string;
     tokenOut: string;
@@ -131,8 +128,11 @@ export enum PoolFilter {
     All = 'All',
     Weighted = 'Weighted',
     Stable = 'Stable',
-    MetaStable = 'MetaStable',
-    LBP = 'LiquidityBootstrapping',
+}
+
+export interface SwapOptions {
+    timestamp: number;
+    poolTypeFilter: PoolFilter;
 }
 
 export interface PoolBase {
@@ -150,15 +150,37 @@ export interface PoolBase {
     updateTokenBalanceForPool: (token: string, newBalance: BigNumber) => void;
     _exactTokenInForTokenOut: (
         poolPairData: PoolPairBase,
-        amount: BigNumber,
-        exact: boolean
+        amount: BigNumber
+    ) => BigNumber;
+    _exactTokenInForBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _exactBPTInForTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
     ) => BigNumber;
     _tokenInForExactTokenOut: (
         poolPairData: PoolPairBase,
-        amount: BigNumber,
-        exact: boolean
+        amount: BigNumber
+    ) => BigNumber;
+    _tokenInForExactBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _BPTInForExactTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
     ) => BigNumber;
     _spotPriceAfterSwapExactTokenInForTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _spotPriceAfterSwapExactTokenInForBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _spotPriceAfterSwapExactBPTInForTokenOut: (
         poolPairData: PoolPairBase,
         amount: BigNumber
     ) => BigNumber;
@@ -166,11 +188,59 @@ export interface PoolBase {
         poolPairData: PoolPairBase,
         amount: BigNumber
     ) => BigNumber;
+    _spotPriceAfterSwapTokenInForExactBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _spotPriceAfterSwapBPTInForExactTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
     _derivativeSpotPriceAfterSwapExactTokenInForTokenOut: (
         poolPairData: PoolPairBase,
         amount: BigNumber
     ) => BigNumber;
+    _derivativeSpotPriceAfterSwapExactTokenInForBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _derivativeSpotPriceAfterSwapExactBPTInForTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
     _derivativeSpotPriceAfterSwapTokenInForExactTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _derivativeSpotPriceAfterSwapTokenInForExactBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _derivativeSpotPriceAfterSwapBPTInForExactTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmoutGivenIn: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmexactTokenInForBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmexactBPTInForTokenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _evminGivenOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmtokenInForExactBPTOut: (
+        poolPairData: PoolPairBase,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmbptInForExactTokenOut: (
         poolPairData: PoolPairBase,
         amount: BigNumber
     ) => BigNumber;

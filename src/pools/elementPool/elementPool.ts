@@ -3,13 +3,12 @@ import {
     PoolBase,
     PoolTypes,
     SwapPairType,
+    PairTypes,
     PoolPairBase,
     SwapTypes,
-    SubgraphPoolBase,
-    SubgraphToken,
 } from '../../types';
 import { getAddress } from '@ethersproject/address';
-import { bnum } from '../../utils/bignumber';
+import { bnum } from '../../bmath';
 import {
     _exactTokenInForTokenOut,
     _tokenInForExactTokenOut,
@@ -20,16 +19,32 @@ import {
     getTimeTillExpiry,
 } from './elementMath';
 
-type ElementPoolToken = Pick<SubgraphToken, 'address' | 'balance' | 'decimals'>;
+export interface ElementPoolToken {
+    address: string;
+    balance: string;
+    decimals: string | number;
+}
 
-export type ElementPoolPairData = PoolPairBase & {
+export interface ElementPoolPairData extends PoolPairBase {
+    id: string;
+    address: string;
+    poolType: PoolTypes;
+    pairType: PairTypes;
+    tokenIn: string;
+    tokenOut: string;
+    balanceIn: BigNumber;
+    balanceOut: BigNumber;
+    swapFee: BigNumber;
+    decimalsIn: number;
+    decimalsOut: number;
+    // Element specific fields
     totalShares: BigNumber;
     expiryTime: number;
     unitSeconds: number;
     principalToken: string;
     baseToken: string;
     currentBlockTimestamp: number;
-};
+}
 
 export class ElementPool implements PoolBase {
     poolType: PoolTypes = PoolTypes.Element;
@@ -46,29 +61,6 @@ export class ElementPool implements PoolBase {
     principalToken: string;
     baseToken: string;
     currentBlockTimestamp: number;
-
-    static fromPool(pool: SubgraphPoolBase): ElementPool {
-        if (!pool.expiryTime) throw new Error('ElementPool missing expiryTime');
-        if (!pool.unitSeconds)
-            throw new Error('ElementPool missing unitSeconds');
-        if (!pool.principalToken)
-            throw new Error('ElementPool missing principalToken');
-
-        if (!pool.baseToken) throw new Error('ElementPool missing baseToken');
-
-        return new ElementPool(
-            pool.id,
-            pool.address,
-            pool.swapFee,
-            pool.totalShares,
-            pool.tokens,
-            pool.tokensList,
-            pool.expiryTime,
-            pool.unitSeconds,
-            pool.principalToken,
-            pool.baseToken
-        );
-    }
 
     constructor(
         id: string,
@@ -95,30 +87,56 @@ export class ElementPool implements PoolBase {
         this.currentBlockTimestamp = 0;
     }
 
-    setCurrentBlockTimestamp(timestamp: number): void {
+    setCurrentBlockTimestamp(timestamp: number) {
         this.currentBlockTimestamp = timestamp;
     }
 
-    setTypeForSwap(type: SwapPairType): void {
+    setTypeForSwap(type: SwapPairType) {
         this.swapPairType = type;
     }
 
     parsePoolPairData(tokenIn: string, tokenOut: string): ElementPoolPairData {
-        const tokenIndexIn = this.tokens.findIndex(
-            (t) => getAddress(t.address) === getAddress(tokenIn)
-        );
-        if (tokenIndexIn < 0) throw 'Pool does not contain tokenIn';
-        const tI = this.tokens[tokenIndexIn];
-        const balanceIn = tI.balance;
-        const decimalsIn = tI.decimals;
+        let pairType: PairTypes;
+        let tI: ElementPoolToken;
+        let tO: ElementPoolToken;
+        let balanceIn: string;
+        let balanceOut: string;
+        let decimalsOut: string | number;
+        let decimalsIn: string | number;
+        let tokenIndexIn: number;
+        let tokenIndexOut: number;
 
-        const tokenIndexOut = this.tokens.findIndex(
-            (t) => getAddress(t.address) === getAddress(tokenOut)
-        );
-        if (tokenIndexOut < 0) throw 'Pool does not contain tokenOut';
-        const tO = this.tokens[tokenIndexOut];
-        const balanceOut = tO.balance;
-        const decimalsOut = tO.decimals;
+        // Check if tokenIn is the pool token itself (BPT)
+        if (tokenIn == this.address) {
+            pairType = PairTypes.BptToToken;
+            balanceIn = this.totalShares;
+            decimalsIn = '18'; // Not used but has to be defined
+        } else if (tokenOut == this.address) {
+            pairType = PairTypes.TokenToBpt;
+            balanceOut = this.totalShares;
+            decimalsOut = '18'; // Not used but has to be defined
+        } else {
+            pairType = PairTypes.TokenToToken;
+        }
+
+        if (pairType != PairTypes.BptToToken) {
+            tokenIndexIn = this.tokens.findIndex(
+                t => getAddress(t.address) === getAddress(tokenIn)
+            );
+            if (tokenIndexIn < 0) throw 'Pool does not contain tokenIn';
+            tI = this.tokens[tokenIndexIn];
+            balanceIn = tI.balance;
+            decimalsIn = tI.decimals;
+        }
+        if (pairType != PairTypes.TokenToBpt) {
+            tokenIndexOut = this.tokens.findIndex(
+                t => getAddress(t.address) === getAddress(tokenOut)
+            );
+            if (tokenIndexOut < 0) throw 'Pool does not contain tokenOut';
+            tO = this.tokens[tokenIndexOut];
+            balanceOut = tO.balance;
+            decimalsOut = tO.decimals;
+        }
 
         // We already add the virtual LP shares to the right balance
         let bnumBalanceIn = bnum(balanceIn);
@@ -132,6 +150,7 @@ export class ElementPool implements PoolBase {
             id: this.id,
             address: this.address,
             poolType: this.poolType,
+            pairType: pairType,
             tokenIn: tokenIn,
             tokenOut: tokenOut,
             principalToken: this.principalToken,
@@ -169,9 +188,9 @@ export class ElementPool implements PoolBase {
         if (swapType === SwapTypes.SwapExactIn) {
             // "Ai < (Bi**(1-t)+Bo**(1-t))**(1/(1-t))-Bi" must hold in order for
             // base of root to be non-negative
-            const Bi = poolPairData.balanceIn.toNumber();
-            const Bo = poolPairData.balanceOut.toNumber();
-            const t = getTimeTillExpiry(
+            let Bi = poolPairData.balanceIn.toNumber();
+            let Bo = poolPairData.balanceOut.toNumber();
+            let t = getTimeTillExpiry(
                 this.expiryTime,
                 this.currentBlockTimestamp,
                 this.unitSeconds
@@ -189,28 +208,57 @@ export class ElementPool implements PoolBase {
             this.totalShares = newBalance.toString();
         } else {
             // token is underlying in the pool
-            const T = this.tokens.find((t) => t.address === token);
-            if (!T) throw Error('Pool does not contain this token');
+            const T = this.tokens.find(t => t.address === token);
             T.balance = newBalance.toString();
         }
     }
 
     _exactTokenInForTokenOut(
         poolPairData: ElementPoolPairData,
-        amount: BigNumber,
-        exact: boolean
+        amount: BigNumber
     ): BigNumber {
         poolPairData.currentBlockTimestamp = this.currentBlockTimestamp;
         return _exactTokenInForTokenOut(amount, poolPairData);
     }
 
+    _exactTokenInForBPTOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
+    _exactBPTInForTokenOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
     _tokenInForExactTokenOut(
         poolPairData: ElementPoolPairData,
-        amount: BigNumber,
-        exact: boolean
+        amount: BigNumber
     ): BigNumber {
         poolPairData.currentBlockTimestamp = this.currentBlockTimestamp;
         return _tokenInForExactTokenOut(amount, poolPairData);
+    }
+
+    _tokenInForExactBPTOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
+    _BPTInForExactTokenOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
     }
 
     _spotPriceAfterSwapExactTokenInForTokenOut(
@@ -221,12 +269,44 @@ export class ElementPool implements PoolBase {
         return _spotPriceAfterSwapExactTokenInForTokenOut(amount, poolPairData);
     }
 
+    _spotPriceAfterSwapExactTokenInForBPTOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
+    _spotPriceAfterSwapExactBPTInForTokenOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
     _spotPriceAfterSwapTokenInForExactTokenOut(
         poolPairData: ElementPoolPairData,
         amount: BigNumber
     ): BigNumber {
         poolPairData.currentBlockTimestamp = this.currentBlockTimestamp;
         return _spotPriceAfterSwapTokenInForExactTokenOut(amount, poolPairData);
+    }
+
+    _spotPriceAfterSwapTokenInForExactBPTOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
+    _spotPriceAfterSwapBPTInForExactTokenOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
     }
 
     _derivativeSpotPriceAfterSwapExactTokenInForTokenOut(
@@ -240,6 +320,22 @@ export class ElementPool implements PoolBase {
         );
     }
 
+    _derivativeSpotPriceAfterSwapExactTokenInForBPTOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
+    _derivativeSpotPriceAfterSwapExactBPTInForTokenOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
     _derivativeSpotPriceAfterSwapTokenInForExactTokenOut(
         poolPairData: ElementPoolPairData,
         amount: BigNumber
@@ -250,4 +346,46 @@ export class ElementPool implements PoolBase {
             poolPairData
         );
     }
+
+    _derivativeSpotPriceAfterSwapTokenInForExactBPTOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
+    _derivativeSpotPriceAfterSwapBPTInForExactTokenOut(
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ): BigNumber {
+        throw 'Element pool does not support SOR add/remove liquidity';
+        return bnum(-1);
+    }
+
+    // TODO - These need updated with real maths
+    _evmoutGivenIn: (
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmexactTokenInForBPTOut: (
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmexactBPTInForTokenOut: (
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ) => BigNumber;
+    _evminGivenOut: (
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmtokenInForExactBPTOut: (
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ) => BigNumber;
+    _evmbptInForExactTokenOut: (
+        poolPairData: ElementPoolPairData,
+        amount: BigNumber
+    ) => BigNumber;
 }
